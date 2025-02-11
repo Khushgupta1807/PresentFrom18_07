@@ -155,7 +155,7 @@ st.markdown(f"<p style='font-size:30px;'>{longest_streak_text}</p>", unsafe_allo
 # 5. BIGRAM WORD CLOUD
 #################################
 stop_words = set(stopwords.words('english'))
-custom_stopwords = {
+custom_stopwords = 
     {
       'nhi', 'mujhe', 'haan', 'na', 'hmm', 
     'bhai', '<media', 'omitted>', 'de', 'kr','null','ho','h','hi','kr','hai','deleted_message','message_edited','deleted_message'

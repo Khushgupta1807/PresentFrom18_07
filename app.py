@@ -16,6 +16,18 @@ nltk.download('vader_lexicon')
 from nltk.corpus import stopwords
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
+
+st.set_page_config(
+    page_title="Memory Analysis",
+    page_icon="❤️",
+    layout="wide"
+)
+
+# Add a title and a cute message
+st.title("Chat Analysis Dashboard")
+st.markdown("### Hi Princess, Welcome to our little memory lane! 💖")
+st.write("Here's a look at our chat moments and the story of our relationship, all in one place. I wish that these conversations never stop.")
+
 #################################
 # 1. READ & PARSE THE CHAT FILE #
 #################################

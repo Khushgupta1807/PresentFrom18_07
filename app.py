@@ -147,8 +147,8 @@ longest_streak_text = f"Longest chat streak: {max_streak} days, from {max_streak
 #################################
 stop_words = set(stopwords.words('english'))
 custom_stopwords = {
-    'ok', 'nhi', 'mujhe', 'haan', 'na', 'hmm', 
-    'bhai', '<media', 'omitted>', 'de', 'kr'
+     'ok', 'nhi', 'mujhe', 'haan', 'na', 'hmm', 
+    'bhai', '<media', 'omitted>', 'de', 'kr','null','ho','h','hi','kr','hai','deleted_message','message_edited','deleted_message'
 }
 stop_words.update(custom_stopwords)
 

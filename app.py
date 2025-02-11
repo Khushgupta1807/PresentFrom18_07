@@ -1,3 +1,5 @@
+import streamlit as st
+import requests
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,40 +8,47 @@ import numpy as np
 import string
 from collections import Counter
 from datetime import timedelta
-import requests
-
 from wordcloud import WordCloud
 import nltk
-import streamlit as st
 
-# Download required NLTK data
 nltk.download('stopwords')
 nltk.download('vader_lexicon')
 from nltk.corpus import stopwords
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
+# Set up the page configuration
 st.set_page_config(
     page_title="Memory Analysis",
     page_icon="❤️",
     layout="wide"
 )
 
+# Global CSS for a black background and larger white text
 st.markdown(
     """
     <style>
-    /* This targets all paragraph text within the main container */
-    .reportview-container .main .block-container p {
-        font-size: 30px;
+    /* Set the overall background to black */
+    .stApp {
+        background-color: #000000;
     }
-    /* Optionally, increase font size for any text inside st.write() or st.markdown() that isn’t a heading */
+    
+    /* Increase the font size and set text color to white for normal text */
+    .reportview-container .main .block-container p,
     .stMarkdown, .block-container {
-        font-size: 30px;
+        font-size: 20px;
+        color: #ffffff;
+    }
+    
+    /* Optionally, style headings if needed */
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
-# Add a title and a cute message
+
+# Now add your title and introductory message
 st.title("Chat Analysis Dashboard")
 st.markdown("### Hi Princess, Welcome to our little memory lane! 💖")
 st.write("Here's a look at our chat moments and the story of our relationship, all in one place. I wish that these conversations never stop.")
@@ -56,6 +65,7 @@ pattern = (
     r'(.*)'                        # Message text
 )
 
+# Use your Google Drive direct download URL (replace with your actual file ID)
 CHAT_FILE_URL = 'https://drive.google.com/uc?export=download&id=1KJSx7XL2f0Odu0_p5Fsu1n-BAGn65dvN'
 try:
     response = requests.get(CHAT_FILE_URL)
@@ -65,7 +75,7 @@ try:
 except Exception as e:
     st.error("Error loading chat file: " + str(e))
     st.stop()
-    
+
 messages = re.findall(pattern, chat_data)
 st.write(f"Found {len(messages)} messages in chat data.")
 
@@ -93,7 +103,6 @@ The compound score is a number between -1 and 1, where:
 - **1** indicates extremely positive sentiment.
 """)
 
-# Create the sentiment chart figure
 fig_sentiment, ax_sentiment = plt.subplots(figsize=(12, 6))
 sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax_sentiment)
 ax_sentiment.set_title("Average Daily Sentiment")
@@ -101,8 +110,6 @@ ax_sentiment.set_xlabel("Date")
 ax_sentiment.set_ylabel("Average Sentiment (Compound Score)")
 plt.xticks(rotation=45)
 plt.tight_layout()
-
-# (Removed the first st.pyplot(fig_sentiment) call)
 
 #################################
 # 3. CHAT ACTIVITY HEATMAP
@@ -141,14 +148,18 @@ for i in range(1, len(unique_dates)):
         current_streak = 1
 
 longest_streak_text = f"Longest chat streak: {max_streak} days, from {max_streak_start} to {max_streak_end}."
+# Display the longest streak text with larger font size
+st.markdown(f"<p style='font-size:30px;'>{longest_streak_text}</p>", unsafe_allow_html=True)
 
 #################################
 # 5. BIGRAM WORD CLOUD
 #################################
 stop_words = set(stopwords.words('english'))
 custom_stopwords = {
-     'ok', 'nhi', 'mujhe', 'haan', 'na', 'hmm', 
+    {
+      'nhi', 'mujhe', 'haan', 'na', 'hmm', 
     'bhai', '<media', 'omitted>', 'de', 'kr','null','ho','h','hi','kr','hai','deleted_message','message_edited','deleted_message'
+}
 }
 stop_words.update(custom_stopwords)
 
@@ -183,7 +194,6 @@ else:
 #################################
 # STREAMLIT DASHBOARD LAYOUT
 #################################
-# Display everything here in the final layout
 st.header("Sentiment Timeline (Mood Graph)")
 st.pyplot(fig_sentiment)
 
@@ -191,7 +201,8 @@ st.header("Chat Activity Heatmap")
 st.pyplot(fig_heatmap)
 
 st.header("Our Longest Chat Streak")
-st.write(longest_streak_text)
+# (Longest streak is already displayed above with larger text, but you can also use st.write if desired)
+st.write("")
 
 st.header("Our Fav Words")
 if fig_wordcloud:

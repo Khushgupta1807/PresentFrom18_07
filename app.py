@@ -43,12 +43,15 @@ pattern = (
 )
 
 # Set the chat file path (make sure the file exists in your working directory)
-CHAT_FILE = 'WhatsApp Chat with Bhawna.txt'
-with open(CHAT_FILE, 'r', encoding='utf-8') as f:
-    chat_data = f.read()
-
-messages = re.findall(pattern, chat_data)
-st.write(f"Found {len(messages)} messages.")
+CHAT_FILE_URL = 'https://drive.google.com/uc?export=download&id=1KJSx7XL2f0Odu0_p5Fsu1n-BAGn65dvN'
+try:
+    response = requests.get(CHAT_FILE_URL)
+    response.raise_for_status()
+    chat_data = response.text
+    st.write("Chat file loaded successfully!")
+except Exception as e:
+    st.error("Error loading chat file: " + str(e))
+    st.stop()
 
 # Create a DataFrame from the parsed messages
 df = pd.DataFrame(messages, columns=['date', 'time', 'ampm', 'sender', 'text'])

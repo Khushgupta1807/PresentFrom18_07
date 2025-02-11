@@ -29,11 +29,11 @@ st.markdown(
     <style>
     /* This targets all paragraph text within the main container */
     .reportview-container .main .block-container p {
-        font-size: 20px;
+        font-size: 30px;
     }
     /* Optionally, increase font size for any text inside st.write() or st.markdown() that isn’t a heading */
     .stMarkdown, .block-container {
-        font-size: 20px;
+        font-size: 30px;
     }
     </style>
     """,

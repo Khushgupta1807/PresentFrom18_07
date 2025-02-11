@@ -25,6 +25,21 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    /* This targets all paragraph text within the main container */
+    .reportview-container .main .block-container p {
+        font-size: 20px;
+    }
+    /* Optionally, increase font size for any text inside st.write() or st.markdown() that isn’t a heading */
+    .stMarkdown, .block-container {
+        font-size: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # Add a title and a cute message
 st.title("Chat Analysis Dashboard")
 st.markdown("### Hi Princess, Welcome to our little memory lane! 💖")
@@ -86,13 +101,18 @@ The compound score is a number between -1 and 1, where:
 """)
 
 # Plot the sentiment timeline (example)
-fig, ax = plt.subplots(figsize=(12, 6))
-sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax)
-ax.set_title("Average Daily Sentiment")
-ax.set_xlabel("Date")
-ax.set_ylabel("Average Sentiment (Compound Score)")
+# Create the sentiment chart figure
+fig_sentiment, ax_sentiment = plt.subplots(figsize=(12, 6))
+sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax_sentiment)
+ax_sentiment.set_title("Average Daily Sentiment")
+ax_sentiment.set_xlabel("Date")
+ax_sentiment.set_ylabel("Average Sentiment (Compound Score)")
 plt.xticks(rotation=45)
-st.pyplot(fig)
+plt.tight_layout()
+
+# Now display the figure in the app
+st.pyplot(fig_sentiment)
+
 
 #################################
 # 3. CHAT ACTIVITY HEATMAP

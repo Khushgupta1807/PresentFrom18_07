@@ -148,18 +148,15 @@ for i in range(1, len(unique_dates)):
         current_streak = 1
 
 longest_streak_text = f"Longest chat streak: {max_streak} days, from {max_streak_start} to {max_streak_end}."
-# Display the longest streak text with larger font size
-st.markdown(f"<p style='font-size:30px;'>{longest_streak_text}</p>", unsafe_allow_html=True)
 
 #################################
 # 5. BIGRAM WORD CLOUD
 #################################
 stop_words = set(stopwords.words('english'))
-custom_stopwords ={
-     'nhi', 'mujhe', 'haan', 'na', 'hmm', 
-    'bhai', '<media', 'omitted>', 'de', 'kr','null','ho','h','hi','kr','hai','deleted_message','message_edited','deleted_message'
+custom_stopwords = {
+    'nhi', 'mujhe', 'haan', 'na', 'hmm', 
+    'bhai', '<media', 'omitted>', 'de', 'kr', 'null', 'ho', 'h', 'hi', 'kr', 'hai', 'deleted_message', 'message_edited', 'deleted_message'
 }
-
 stop_words.update(custom_stopwords)
 
 def clean_message(msg):
@@ -200,8 +197,7 @@ st.header("Chat Activity Heatmap")
 st.pyplot(fig_heatmap)
 
 st.header("Our Longest Chat Streak")
-# (Longest streak is already displayed above with larger text, but you can also use st.write if desired)
-st.write("")
+st.markdown(f"<p style='font-size:30px;'>{longest_streak_text}</p>", unsafe_allow_html=True)
 
 st.header("Our Fav Words")
 if fig_wordcloud:

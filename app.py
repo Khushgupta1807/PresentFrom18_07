@@ -18,7 +18,6 @@ nltk.download('vader_lexicon')
 from nltk.corpus import stopwords
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-
 st.set_page_config(
     page_title="Memory Analysis",
     page_icon="❤️",
@@ -48,8 +47,6 @@ st.write("Here's a look at our chat moments and the story of our relationship, a
 #################################
 # 1. READ & PARSE THE CHAT FILE #
 #################################
-# This regex is tailored for messages like:
-# "04/10/2023, 7:58 pm - Khush: <Media omitted>"
 pattern = (
     r'(\d{1,2}/\d{1,2}/\d{4}),\s*'  # Date (e.g., "04/10/2023,")
     r'(\d{1,2}:\d{2})'              # Time (e.g., "7:58")
@@ -59,7 +56,6 @@ pattern = (
     r'(.*)'                        # Message text
 )
 
-# Set the chat file path (make sure the file exists in your working directory)
 CHAT_FILE_URL = 'https://drive.google.com/uc?export=download&id=1KJSx7XL2f0Odu0_p5Fsu1n-BAGn65dvN'
 try:
     response = requests.get(CHAT_FILE_URL)
@@ -69,12 +65,11 @@ try:
 except Exception as e:
     st.error("Error loading chat file: " + str(e))
     st.stop()
+    
 messages = re.findall(pattern, chat_data)
 st.write(f"Found {len(messages)} messages in chat data.")
-# Create a DataFrame from the parsed messages
-df = pd.DataFrame(messages, columns=['date', 'time', 'ampm', 'sender', 'text'])
 
-# Combine date, time, and am/pm into a datetime string
+df = pd.DataFrame(messages, columns=['date', 'time', 'ampm', 'sender', 'text'])
 df['datetime_str'] = df['date'] + ' ' + df['time'] + df['ampm'].fillna('')
 df['datetime'] = pd.to_datetime(df['datetime_str'], format='%d/%m/%Y %I:%M %p', errors='coerce')
 df.dropna(subset=['datetime'], inplace=True)
@@ -82,15 +77,13 @@ df.sort_values('datetime', inplace=True)
 df.reset_index(drop=True, inplace=True)
 df['date_only'] = df['datetime'].dt.date
 
-
 #################################
 # 2. SENTIMENT TIMELINE (MOOD GRAPH)
 #################################
 analyzer = SentimentIntensityAnalyzer()
-# Compute sentiment for each message (using VADER's compound score)
 df['sentiment'] = df['text'].apply(lambda x: analyzer.polarity_scores(x)['compound'])
-# Average sentiment per day
 sentiment_by_day = df.groupby('date_only')['sentiment'].mean().reset_index()
+
 st.markdown("## Sentiment Timeline (Mood Graph)")
 st.markdown("""
 **Compound Score Explanation:**  
@@ -100,7 +93,6 @@ The compound score is a number between -1 and 1, where:
 - **1** indicates extremely positive sentiment.
 """)
 
-# Plot the sentiment timeline (example)
 # Create the sentiment chart figure
 fig_sentiment, ax_sentiment = plt.subplots(figsize=(12, 6))
 sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax_sentiment)
@@ -110,19 +102,14 @@ ax_sentiment.set_ylabel("Average Sentiment (Compound Score)")
 plt.xticks(rotation=45)
 plt.tight_layout()
 
-# Now display the figure in the app
-st.pyplot(fig_sentiment)
-
+# (Removed the first st.pyplot(fig_sentiment) call)
 
 #################################
 # 3. CHAT ACTIVITY HEATMAP
 #################################
-# Extract weekday and hour from datetime
 df['weekday'] = df['datetime'].dt.day_name()
 df['hour'] = df['datetime'].dt.hour
 activity = df.groupby(['weekday', 'hour']).size().reset_index(name='count')
-
-# Order weekdays from Monday to Sunday
 ordered_weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 activity['weekday'] = pd.Categorical(activity['weekday'], categories=ordered_weekdays, ordered=True)
 activity = activity.sort_values(['weekday', 'hour'])
@@ -158,7 +145,6 @@ longest_streak_text = f"Longest chat streak: {max_streak} days, from {max_streak
 #################################
 # 5. BIGRAM WORD CLOUD
 #################################
-# Define stop words (including custom filler words)
 stop_words = set(stopwords.words('english'))
 custom_stopwords = {
     'ok', 'nhi', 'mujhe', 'haan', 'na', 'hmm', 
@@ -197,8 +183,7 @@ else:
 #################################
 # STREAMLIT DASHBOARD LAYOUT
 #################################
-st.title("Chat Analysis Dashboard")
-
+# Display everything here in the final layout
 st.header("Sentiment Timeline (Mood Graph)")
 st.pyplot(fig_sentiment)
 

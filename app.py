@@ -76,15 +76,23 @@ analyzer = SentimentIntensityAnalyzer()
 df['sentiment'] = df['text'].apply(lambda x: analyzer.polarity_scores(x)['compound'])
 # Average sentiment per day
 sentiment_by_day = df.groupby('date_only')['sentiment'].mean().reset_index()
+st.markdown("## Sentiment Timeline (Mood Graph)")
+st.markdown("""
+**Compound Score Explanation:**  
+The compound score is a number between -1 and 1, where:
+- **-1** indicates extremely negative sentiment,
+- **0** indicates neutral sentiment,
+- **1** indicates extremely positive sentiment.
+""")
 
-# Plot sentiment timeline
-fig_sentiment, ax_sentiment = plt.subplots(figsize=(12, 6))
-sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax_sentiment)
-ax_sentiment.set_title("Sentiment Timeline (Mood Graph)")
-ax_sentiment.set_xlabel("Date")
-ax_sentiment.set_ylabel("Average Sentiment (Compound Score)")
+# Plot the sentiment timeline (example)
+fig, ax = plt.subplots(figsize=(12, 6))
+sns.lineplot(data=sentiment_by_day, x='date_only', y='sentiment', marker='o', ax=ax)
+ax.set_title("Average Daily Sentiment")
+ax.set_xlabel("Date")
+ax.set_ylabel("Average Sentiment (Compound Score)")
 plt.xticks(rotation=45)
-plt.tight_layout()
+st.pyplot(fig)
 
 #################################
 # 3. CHAT ACTIVITY HEATMAP
@@ -163,7 +171,6 @@ if all_bigrams:
     fig_wordcloud, ax_wordcloud = plt.subplots(figsize=(10, 5))
     ax_wordcloud.imshow(wordcloud, interpolation='bilinear')
     ax_wordcloud.axis('off')
-    ax_wordcloud.set_title('Bigram Word Cloud of Your WhatsApp Chat')
 else:
     fig_wordcloud = None
 
@@ -178,10 +185,10 @@ st.pyplot(fig_sentiment)
 st.header("Chat Activity Heatmap")
 st.pyplot(fig_heatmap)
 
-st.header("Longest Chat Streak")
+st.header("Our Longest Chat Streak")
 st.write(longest_streak_text)
 
-st.header("Bigram Word Cloud")
+st.header("Our Fav Words")
 if fig_wordcloud:
     st.pyplot(fig_wordcloud)
 else:

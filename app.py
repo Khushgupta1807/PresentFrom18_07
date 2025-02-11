@@ -54,7 +54,8 @@ try:
 except Exception as e:
     st.error("Error loading chat file: " + str(e))
     st.stop()
-
+messages = re.findall(pattern, chat_data)
+st.write(f"Found {len(messages)} messages in chat data.")
 # Create a DataFrame from the parsed messages
 df = pd.DataFrame(messages, columns=['date', 'time', 'ampm', 'sender', 'text'])
 
@@ -65,6 +66,7 @@ df.dropna(subset=['datetime'], inplace=True)
 df.sort_values('datetime', inplace=True)
 df.reset_index(drop=True, inplace=True)
 df['date_only'] = df['datetime'].dt.date
+
 
 #################################
 # 2. SENTIMENT TIMELINE (MOOD GRAPH)

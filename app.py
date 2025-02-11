@@ -6,6 +6,8 @@ import numpy as np
 import string
 from collections import Counter
 from datetime import timedelta
+import requests
+
 from wordcloud import WordCloud
 import nltk
 import streamlit as st

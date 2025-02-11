@@ -160,7 +160,7 @@ custom_stopwords = {
       'nhi', 'mujhe', 'haan', 'na', 'hmm', 
     'bhai', '<media', 'omitted>', 'de', 'kr','null','ho','h','hi','kr','hai','deleted_message','message_edited','deleted_message'
 }
-}
+
 stop_words.update(custom_stopwords)
 
 def clean_message(msg):

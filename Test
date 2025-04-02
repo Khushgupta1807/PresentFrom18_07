@@ -1,0 +1,24 @@
+from TM1py.Services import TM1Service
+import time
+
+# TM1 Connection Parameters
+tm1_address = "ibmdemos"  # server address
+tm1_port = "50439"        # port number
+tm1_user = "admin"        # username
+tm1_password = "apple"    # password
+tm1_ssl = False           # use SSL or not
+
+# Establish connection to TM1
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
+    print("Connected to TM1.")
+    try:
+        # Loop indefinitely to maintain the connection.
+        while True:
+            # Perform a simple operation as a "heartbeat"
+            cubes = tm1.cubes.get_all_names()
+            print("Connection maintained. Available cubes:", cubes)
+            # Sleep for 60 seconds before the next check
+            time.sleep(60)
+    except KeyboardInterrupt:
+        print("Disconnecting from TM1.")
+

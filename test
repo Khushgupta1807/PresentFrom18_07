@@ -1,0 +1,26 @@
+from TM1py.Services import TM1Service
+
+# TM1 Connection Parameters (adjust these to match your environment)
+tm1_address = "your_tm1_server_address"  # e.g., "tm1.mycompany.com" or an IP address
+tm1_port = "50439"
+tm1_user = "admin"
+tm1_password = "apple"
+tm1_ssl = False
+
+# Define the cube and view you want to test
+cube_name = "InputCube"      # Replace with your cube name
+view_name = "Default"        # Replace with your view name (use "Default" if that's your default view)
+
+# Establish a TM1 connection and test data retrieval
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
+    try:
+        # Retrieve the data from the specified cube and view
+        df = tm1.cubes.cells.execute_view_dataframe(cube_name=cube_name, view_name=view_name, private=False)
+        
+        # Print a preview of the data and the columns to verify the structure
+        print("Data preview from cube:")
+        print(df.head())  # Print first few rows
+        print("\nColumns returned from view:")
+        print(df.columns.tolist())
+    except Exception as e:
+        print("Error reading data from cube:", e)

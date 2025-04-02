@@ -1,7 +1,20 @@
+from TM1py.Services import TM1Service
+
+# TM1 Connection Parameters
+tm1_address = "your_tm1_server_address"
+tm1_port = "50439"
+tm1_user = "admin"
+tm1_password = "apple"
+tm1_ssl = False
+
+cube_name = "InputCube"
+view_name = "Default"
+
 with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
-    # Retrieve data as a pandas DataFrame
-    df = tm1.cubes.cells.execute_view_dataframe(cube_name=cube_name, view_name=view_name, private=False)
-    
-    # Display a preview of the data
-    print("Data retrieved from cube:", cube_name)
-    print(df.head())
+    # Retrieve raw cell data (as list of dictionaries)
+    try:
+        raw_data = tm1.cubes.cells.execute_view(cube_name=cube_name, view_name=view_name, private=False)
+        print("Raw data from view:")
+        print(raw_data)
+    except Exception as e:
+        print("Error retrieving raw data:", e)

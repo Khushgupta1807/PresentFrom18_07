@@ -1,20 +1,86 @@
+import re
+import pandas as pd
 from TM1py.Services import TM1Service
 
-# TM1 Connection Parameters
-tm1_address = "your_tm1_server_address"
+def extract_element(coordinate):
+    """
+    Extract the element name from a coordinate string.
+    For example, given "[Item]. [Item]. [Item 1]", it returns "Item 1".
+    This function uses a regex to find all text within square brackets
+    and returns the last match.
+    """
+    # Use regex to find all content between '[' and ']'
+    matches = re.findall(r'\[([^\]]+)\]', coordinate)
+    if matches:
+        return matches[-1].strip()
+    # Fallback: split on spaces and return the last token
+    tokens = coordinate.split()
+    if tokens:
+        return tokens[-1].strip()
+    return coordinate.strip()
+
+# TM1 Connection Parameters (replace these with your actual details)
+tm1_address = "your_tm1_server_address"  # e.g., "tm1.mycompany.com" or an IP address
 tm1_port = "50439"
 tm1_user = "admin"
 tm1_password = "apple"
 tm1_ssl = False
 
+# Specify the cube and view names
 cube_name = "InputCube"
 view_name = "Default"
 
-with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
-    # Retrieve raw cell data (as list of dictionaries)
-    try:
-        raw_data = tm1.cubes.cells.execute_view(cube_name=cube_name, view_name=view_name, private=False)
-        print("Raw data from view:")
-        print(raw_data)
-    except Exception as e:
-        print("Error retrieving raw data:", e)
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
+                password=tm1_password, ssl=tm1_ssl) as tm1:
+    # Retrieve the raw data from the view.
+    # The returned dictionary's keys are tuples of coordinate strings.
+    raw_data = tm1.cubes.cells.execute_view(cube_name=cube_name, view_name=view_name, private=False)
+    
+    # Build a list to hold each row (one row per cell)
+    rows = []
+    
+    for key, cell in raw_data.items():
+        # Expecting key to have 6 coordinates corresponding to:
+        # [Item], [Location], [Customer], [Month], [Year], [Sales]
+        if len(key) < 6:
+            print("Warning: key has unexpected format:", key)
+            continue
+        
+        item     = extract_element(key[0])
+        location = extract_element(key[1])
+        customer = extract_element(key[2])
+        month    = extract_element(key[3])
+        year     = extract_element(key[4])
+        # For Sales, try to extract the numeric value from the coordinate;
+        # if the cell's value is provided, that takes precedence.
+        sales_coord = extract_element(key[5])
+        
+        value = cell.get('Value')
+        if value is None:
+            try:
+                # If conversion fails, keep the string
+                value = float(sales_coord)
+            except Exception:
+                value = sales_coord
+        
+        # Create a dictionary for this row
+        row = {
+            "Item": item,
+            "Location": location,
+            "Customer": customer,
+            "Month": month,
+            "Year": year,
+            "Sales": value
+        }
+        rows.append(row)
+    
+    # Create a DataFrame from the collected rows
+    df = pd.DataFrame(rows)
+    
+    # Print out the DataFrame shape and preview for verification
+    print("DataFrame shape:", df.shape)
+    print("Unique Item values:", df["Item"].unique())
+    print("Unique Location values:", df["Location"].unique())
+    print("Unique Customer values:", df["Customer"].unique())
+    print("DataFrame preview:")
+    print(df.head())

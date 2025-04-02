@@ -1,0 +1,7 @@
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
+    # Retrieve data as a pandas DataFrame
+    df = tm1.cubes.cells.execute_view_dataframe(cube_name=cube_name, view_name=view_name, private=False)
+    
+    # Display a preview of the data
+    print("Data retrieved from cube:", cube_name)
+    print(df.head())

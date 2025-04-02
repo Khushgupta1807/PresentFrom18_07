@@ -1,0 +1,263 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import STL
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.drawing.image import Image
+
+# TM1py imports for TM1 connectivity
+from TM1py.Services import TM1Service
+
+# --- Load Segmentation Configuration ---
+# Config file should be named "segmentation_config.xlsx" and contain two columns: "Parameter" and "Value"
+try:
+    config_file = "segmentation_config.xlsx"
+    config_df = pd.read_excel(config_file)
+    # Convert the configuration DataFrame to a dictionary for easier lookup
+    config_dict = pd.Series(config_df.Value.values, index=config_df.Parameter).to_dict()
+    print("Configuration file loaded successfully.")
+except Exception as e:
+    print("Configuration file not found or error reading config. Using default values.")
+    config_dict = {}
+
+# Define default values with improved, self-explanatory names
+new_item_cutoff_days = int(config_dict.get("New Item Cutoff Days", 90))  # Days to determine if an item is new
+stl_period = int(config_dict.get("STL Decomposition Period", 12))  # Period used in STL decomposition (e.g., 12 for monthly data)
+trend_threshold_factor = float(config_dict.get("Trend Threshold Factor", 0.005))  # Factor to determine significant trend relative to average sales
+seasonality_high_ratio = float(config_dict.get("High Seasonality Ratio", 0.3))  # Ratio threshold to classify seasonality as high
+seasonality_moderate_ratio = float(config_dict.get("Moderate Seasonality Ratio", 0.1))  # Ratio threshold to classify seasonality as moderate
+intermittency_threshold = float(config_dict.get("Intermittency Threshold Ratio", 0.5))  # Proportion threshold of nonzero months to classify as regular
+cov_threshold_X = float(config_dict.get("COV Class X Threshold", 0.2))  # COV threshold for classification as Class X
+cov_threshold_Y = float(config_dict.get("COV Class Y Threshold", 0.5))  # COV threshold for classification as Class Y
+cumulative_threshold_A = float(config_dict.get("Cumulative Sales Threshold for Class A", 0.8))  # Cumulative sales percentage threshold for Class A
+cumulative_threshold_B = float(config_dict.get("Cumulative Sales Threshold for Class B", 0.95))  # Cumulative sales percentage threshold for Class B
+# New parameter: Choose which metric to use for the cumulative calculation (default "Volume % of Sales")
+cumulative_metric = config_dict.get("Cumulative Metric", "Volume % of Sales")
+# --- End of Config Loading ---
+
+# TM1 Connection Parameters (adjust these to match your TM1 server settings)
+tm1_address = "ibmdemos"  # server address
+tm1_port = "50439"
+tm1_user = "admin"
+tm1_password = "apple"
+tm1_ssl = False
+
+# Names for input cube, view, and output cube
+input_cube = "InputCube"       # Cube name that contains the input data
+input_view = "InputView"       # View defined on the input cube to return required columns
+output_cube = "OutputCube"     # Cube name where segmentation results will be written
+
+# Establish TM1 connection
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user, password=tm1_password, ssl=tm1_ssl) as tm1:
+    
+    # -------------------- Input: Read Data from TM1 Cube --------------------
+    try:
+        # Read the input data as a DataFrame using a pre-defined view
+        # The view should return columns: "Stat Item", "Stat Location", "Stat Customer", "Sum of Total Weight", "Year", "Month"
+        df = tm1.cubes.cells.execute_view_dataframe(cube_name=input_cube, view_name=input_view, private=False)
+        print("Successfully retrieved input data from TM1.")
+    except Exception as e:
+        print(f"Error reading input data from TM1 cube: {e}")
+        raise
+
+    # -------------------- Data Preprocessing --------------------
+    # Define Columns to Keep
+    columns_to_keep = ["Stat Item", "Stat Location", "Stat Customer", "Sum of Total Weight", "Year", "Month"]
+    df = df[columns_to_keep]
+
+    # Rename Columns
+    df.rename(columns={
+        "Stat Item": "Item",
+        "Stat Location": "Location",
+        "Stat Customer": "Customer",
+        "Sum of Total Weight": "Sales"
+    }, inplace=True)
+
+    # Convert Month and Year to Date
+    df.dropna(subset=["Year", "Month"], inplace=True)
+    df["Year"] = df["Year"].astype(int)
+    month_map = {
+        "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+        "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
+    }
+    # If Month is given as text, map it; otherwise assume it's numeric.
+    if df["Month"].dtype == object:
+        df["Month"] = df["Month"].map(month_map).astype(int)
+    else:
+        df["Month"] = df["Month"].astype(int)
+    df["Date"] = pd.to_datetime(df["Year"].astype(str) + "-" + df["Month"].astype(str), format="%Y-%m", errors="coerce")
+    df.dropna(subset=["Date"], inplace=True)
+
+    # Group by both Location and Customer
+    grouped_by_location_and_customer = df.groupby(["Location", "Customer"])
+
+    # Collect processed results for all groups
+    final_results = []
+
+    # (Optional) Create an Excel workbook to store a summary locally (if needed)
+    wb = Workbook()
+    ws_summary = wb.active
+    ws_summary.title = "Summary"
+
+    # Iterate over each (Location, Customer) combination and process separately
+    for (location, customer), group in grouped_by_location_and_customer:
+        print(f"Processing Location: {location}, Customer: {customer}")
+        
+        # Save the original group (unsummarized) for time series analysis
+        group_original = group.copy()
+
+        # Calculate Mean and StdDev for Each Item
+        item_stats = group.groupby("Item")["Sales"].agg(["mean", "std"]).reset_index()
+        item_stats.rename(columns={"mean": "Average of Sales", "std": "StdDev of Sales"}, inplace=True)
+
+        # Merge Stats Back to Original DataFrame
+        group = group.merge(item_stats, on="Item", how="left")
+
+        # Aggregate Data by Item (for overall summary metrics)
+        agg_funcs = {
+            "Sales": "sum", 
+            "Date": "first", 
+            "Average of Sales": "first",
+            "StdDev of Sales": "first"
+        }
+        group_agg = group.groupby("Item").agg(agg_funcs).reset_index()
+
+        # Identify New Items based on first appearance in the aggregated data.
+        first_appearance = group.groupby("Item")["Date"].min()
+        cutoff_date = group["Date"].max() - pd.Timedelta(days=new_item_cutoff_days)
+        group_agg["New Item"] = group_agg["Item"].map(lambda x: "Yes" if first_appearance.get(x, cutoff_date) > cutoff_date else "No")
+
+        # Additional Calculations for Each Item
+        group_agg["Volume of Sales"] = group_agg["Sales"]
+        group_agg["COV"] = group_agg["StdDev of Sales"] / group_agg["Average of Sales"]
+        group_agg["Volume % of Sales"] = group_agg["Volume of Sales"] / group_agg["Volume of Sales"].sum()
+
+        # Add COV Class using thresholds from config
+        group_agg["COV Class"] = group_agg["COV"].apply(lambda cov: "X" if cov <= cov_threshold_X else ("Y" if cov <= cov_threshold_Y else "Z"))
+
+        # Add Class based on the cumulative metric defined in config
+        group_agg = group_agg.sort_values(by=cumulative_metric, ascending=False).reset_index(drop=True)
+        group_agg["Cumulative %"] = group_agg[cumulative_metric].cumsum()
+        group_agg["Class"] = group_agg["Cumulative %"].apply(
+            lambda cumulative: "A" if cumulative <= cumulative_threshold_A else ("B" if cumulative <= cumulative_threshold_B else "C")
+        )
+
+        # Add Segment: Combining Class and COV Class
+        group_agg["Segment"] = group_agg.apply(lambda row: f"{row['Class']}{row['COV Class']}", axis=1)
+
+        # ---- Compute Trend, Seasonality and Intermittency using STL decomposition ----
+        trend_list = []
+        seasonality_list = []
+        intermittency_list = []
+
+        # Get the overall date range for this (Location, Customer) group.
+        overall_start = group_original["Date"].min()
+        overall_end = group_original["Date"].max()
+        full_date_range = pd.date_range(start=overall_start, end=overall_end, freq='MS')  # monthly periods
+
+        for item in group_agg["Item"]:
+            # Build the time series for the current item
+            ts = group_original[group_original["Item"] == item].groupby("Date")["Sales"].sum()
+            ts = ts.reindex(full_date_range, fill_value=0)
+            
+            # Run STL decomposition using period from config
+            try:
+                stl = STL(ts, period=stl_period, robust=True)
+                res = stl.fit()
+                trend_comp = res.trend
+                seasonal_comp = res.seasonal
+            except Exception as e:
+                print(f"STL decomposition failed for item {item} with error {e}")
+                trend_comp = ts.copy()
+                seasonal_comp = pd.Series(0, index=ts.index)
+            
+            # Trend: Compute slope of the trend component via simple linear regression
+            x = np.arange(len(trend_comp))
+            slope, _ = np.polyfit(x, trend_comp, 1)
+            avg_sales = ts.mean()
+            threshold = trend_threshold_factor * avg_sales  
+            if slope > threshold:
+                trend_label = "Upward"
+            elif slope < -threshold:
+                trend_label = "Downward"
+            else:
+                trend_label = "No clear trend"
+
+            # Seasonality: Measure amplitude relative to average sales
+            seasonal_amplitude = seasonal_comp.max() - seasonal_comp.min()
+            seasonal_ratio = seasonal_amplitude / (avg_sales + 1e-5)
+            if seasonal_ratio > seasonality_high_ratio:
+                seasonality_label = "High"
+            elif seasonal_ratio > seasonality_moderate_ratio:
+                seasonality_label = "Moderate"
+            else:
+                seasonality_label = "Low"
+            
+            # Intermittency: Mark item as intermittent if sales occur in fewer than threshold proportion of the months
+            total_months = len(ts)
+            nonzero_months = (ts > 0).sum()
+            if nonzero_months < (total_months * intermittency_threshold):
+                intermittency_label = "Intermittent"
+            else:
+                intermittency_label = "Regular"
+
+            trend_list.append(trend_label)
+            seasonality_list.append(seasonality_label)
+            intermittency_list.append(intermittency_label)
+        
+        # Add the new metrics to the aggregated DataFrame
+        group_agg["Trend"] = trend_list
+        group_agg["Seasonality"] = seasonality_list
+        group_agg["Intermittency"] = intermittency_list
+        # ------------------------------------------------------------------------------
+
+        # Move Location and Customer columns after Item for clarity
+        group_agg["Location"] = location
+        group_agg["Customer"] = customer
+        column_order = ["Item", "Location", "Customer"] + [col for col in group_agg.columns if col not in ["Item", "Location", "Customer"]]
+        group_agg = group_agg[column_order]
+
+        # Append processed results for this (Location, Customer) group
+        final_results.append(group_agg)
+        
+        # (Optional) Also add this group's results to the Excel summary workbook
+        for r in dataframe_to_rows(group_agg, index=False, header=True):
+            ws_summary.append(r)
+
+    # Combine all results into a single DataFrame for the overall summary
+    combined_df = pd.concat(final_results, ignore_index=True)
+
+    # (Optional) Save the Excel summary locally
+    local_output_file = "OutSeg.xlsx"
+    wb.save(local_output_file)
+    print(f"Local summary output saved to {local_output_file}")
+
+    # -------------------- Output: Write Results to TM1 Cube --------------------
+    # For writing to TM1, we assume the output cube ("OutputCube") has dimensions:
+    # "Item", "Location", "Customer", and "Metric"
+    # We will write each measure (column) from combined_df as a separate cell.
+    
+    # Define the list of metrics to output (exclude key columns)
+    metrics = [col for col in combined_df.columns if col not in ["Item", "Location", "Customer"]]
+    
+    # Build the cellset dictionary for output
+    cellset = {}
+    for _, row in combined_df.iterrows():
+        for metric in metrics:
+            key = (str(row["Item"]), str(row["Location"]), str(row["Customer"]), metric)
+            # Convert the value to float if possible; if not (e.g., string labels), keep as string.
+            try:
+                value = float(row[metric])
+            except (ValueError, TypeError):
+                value = str(row[metric])
+            cellset[key] = value
+
+    # Write the cellset to the output cube
+    try:
+        tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset)
+        print(f"Segmentation results successfully written to TM1 cube: {output_cube}")
+    except Exception as e:
+        print(f"Error writing results to TM1 cube: {e}")
+
+    # End of TM1 connection (the with-statement will log out automatically)

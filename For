@@ -1,0 +1,255 @@
+
+#code
+#!/usr/bin/env python
+import os
+import logging
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+
+# Global configuration (adjust column names as needed)
+COLUMN_MAPPING = {
+    "date": "Date",
+    "item": "Item",
+    "location": "Location",
+    "customer": "Customer",
+    "sales": "Sales"
+}
+
+# -------------------------------------------------------------------------------
+# Seasonal Naive Forecast Function
+# -------------------------------------------------------------------------------
+def advanced_fcst_seasonal_naive(self):
+    """
+    Recursive Seasonal Naive Forecast:
+    Uses the value from 12 periods ago plus a drift.
+    """
+    train_series = self.train_data[COLUMN_MAPPING["sales"]].copy()
+    fcst_values = []
+    if len(train_series) > 12:
+        drift = (train_series.iloc[-1] - train_series.iloc[-13]) / 12
+    else:
+        drift = 0
+    for _ in range(self.horizon):
+        if len(train_series) <= 12:
+            one_step = train_series.iloc[-1] + drift
+        else:
+            one_step = train_series.iloc[-12] + drift
+        one_step = max(one_step, 0)
+        fcst_values.append(one_step)
+        next_idx = train_series.index[-1] + pd.offsets.MonthEnd(1)
+        train_series.loc[next_idx] = one_step
+    return pd.Series(fcst_values, index=pd.date_range(
+        start=self.train_data.index[-1] + pd.offsets.MonthEnd(1),
+        periods=self.horizon, freq='M'
+    ))
+
+# -------------------------------------------------------------------------------
+# Minimal Forecaster Class with Seasonal Naive Only
+# -------------------------------------------------------------------------------
+class Forecaster:
+    def __init__(self, train_data, test_data, horizon=None):
+        self.train_data = train_data
+        self.test_data = test_data
+        self.horizon = horizon if horizon is not None else len(test_data)
+    
+    def seasonal_naive(self):
+        return advanced_fcst_seasonal_naive(self)
+
+# -------------------------------------------------------------------------------
+# Main Code Execution
+# -------------------------------------------------------------------------------
+if __name__ == "__main__":
+    try:
+        # Define periods
+        train_period = "30-04-2022 to 30-06-2024"
+        test_period = "01-07-2024 to 31-12-2024"
+        forecast_period = "01-01-2025 to 30-06-2025"
+        
+        train_start_date, train_end_date = [pd.to_datetime(d.strip(), dayfirst=True) for d in train_period.split("to")]
+        test_start_date, test_end_date = [pd.to_datetime(d.strip(), dayfirst=True) for d in test_period.split("to")]
+        forecast_start_date, forecast_end_date = [pd.to_datetime(d.strip(), dayfirst=True) for d in forecast_period.split("to")]
+        
+        forecast_date_index = pd.date_range(start=forecast_start_date, end=forecast_end_date, freq='M')
+        test_date_index = pd.date_range(start=test_start_date, end=test_end_date, freq='M')
+        
+        # Read the Excel file once and prepare the data
+        raw_data = pd.read_excel("InputForDemoForcast.xlsx", parse_dates=[COLUMN_MAPPING["date"]])
+        logging.info(f"Original dataset columns: {raw_data.columns.tolist()}")
+        logging.info(f"Original dataset shape: {raw_data.shape}")
+        
+        raw_data[COLUMN_MAPPING["date"]] = pd.to_datetime(raw_data[COLUMN_MAPPING["date"]], errors='coerce')
+        raw_data = raw_data.dropna(subset=[COLUMN_MAPPING["date"]])
+        
+        # Ensure required columns exist
+        for col in [COLUMN_MAPPING["date"], COLUMN_MAPPING["item"], 
+                    COLUMN_MAPPING["location"], COLUMN_MAPPING["customer"], 
+                    COLUMN_MAPPING["sales"]]:
+            if col not in raw_data.columns:
+                raise ValueError(f"Required column '{col}' is missing from the dataset.")
+        
+        # Extract identifiers from the raw data (they remain constant)
+        item = raw_data[COLUMN_MAPPING["item"]].iloc[0]
+        customer = raw_data[COLUMN_MAPPING["customer"]].iloc[0]
+        location = raw_data[COLUMN_MAPPING["location"]].iloc[0]
+        
+        # Prepare data for forecasting:
+        # 1. Set the date column as the index.
+        # 2. Fill missing sales values.
+        # 3. Resample monthly (only sales is needed because there's one combination)
+        data = raw_data.copy()
+        data.set_index(COLUMN_MAPPING["date"], inplace=True)
+        data[COLUMN_MAPPING["sales"]] = data[COLUMN_MAPPING["sales"]].fillna(method="ffill").fillna(method="bfill")
+        data = data.resample('M').agg({COLUMN_MAPPING["sales"]: 'sum'})
+        logging.info(f"After resampling, dataset shape: {data.shape}")
+        
+        # Validate that the data covers the required periods
+        if data.index.min() > train_start_date or data.index.max() < train_end_date:
+            raise ValueError("Data does not cover the required training period.")
+        if data.index.min() > test_start_date or data.index.max() < test_end_date:
+            raise ValueError("Data does not cover the required testing period.")
+        
+        # Split data into training and testing sets
+        train_data = data[train_start_date:train_end_date]
+        test_data = data[test_start_date:test_end_date]
+        
+        # Build output rows:
+        # Row 1: Actual row (identifiers, method "Actual", then actual test sales and NaN for forecast period)
+        output_results = []
+        actual_row = [item, customer, location, "Actual"] + \
+            test_data[COLUMN_MAPPING["sales"]].tolist() + [np.nan] * len(forecast_date_index)
+        output_results.append(actual_row)
+        
+        # Row 2: Forecast row using Seasonal Naive
+        forecaster = Forecaster(train_data, test_data, horizon=len(test_data))
+        forecast_test = forecaster.seasonal_naive()
+        forecaster.horizon = len(forecast_date_index)
+        forecast_future = forecaster.seasonal_naive()
+        forecast_row = [item, customer, location, "Seasonal Naive"] + \
+            forecast_test.tolist() + forecast_future.tolist()
+        output_results.append(forecast_row)
+        
+        # Build DataFrame for output with test and forecast date headers
+        header_test_dates = list(test_date_index.strftime("%d-%m-%Y %H:%M"))
+        header_forecast_dates = list(forecast_date_index.strftime("%d-%m-%Y %H:%M"))
+        columns = ["Item", "Customer", "Location", "Method"] + header_test_dates + header_forecast_dates
+        final_df = pd.DataFrame(output_results, columns=columns)
+        
+        # Save to Excel with header information
+        output_file_final = "E:/IBM Demos/SandOpN/forecasoutput.xlsx"
+        with pd.ExcelWriter(output_file_final, engine='xlsxwriter') as writer:
+            final_df.to_excel(writer, sheet_name="Forecast Results", startrow=3, index=False)
+            workbook = writer.book
+            worksheet = writer.sheets["Forecast Results"]
+            current_time = pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S')
+            try:
+                username = os.getlogin()
+            except Exception:
+                username = "N/A"
+            worksheet.write(0, 0, f"Current Date and Time (UTC): {current_time}")
+            worksheet.write(1, 0, f"Current User's Login: {username}")
+        logging.info(f"Final forecast results saved to {output_file_final}")
+        
+    except Exception as e:
+        logging.error(f"Error in main execution: {e}")
+
+
+
+
+
+final_df['Method'].replace({'Actual':'Actuals'}, inplace=True)
+
+# Preprocessing DataFrame
+
+formatted_df = final_df.drop(columns=['Customer'])\
+                       .melt(id_vars=['Item', 'Location', 'Method'], var_name='Date', value_name='Value').copy()
+
+formatted_df['Date'] = pd.to_datetime(formatted_df['Date'], format='%d-%m-%Y %H:%M')
+formatted_df['Year'] = formatted_df['Date'].dt.year
+formatted_df['Month'] = formatted_df['Date'].dt.strftime('%b')
+formatted_df.fillna(0, inplace=True)
+
+formatted_df
+
+#version # constant- Forecast
+##month # Month col
+#country # Location col
+#product # Item col
+##Value_measure # constant- Value
+#measure # Method col
+
+# Define constant dimension values
+constant_values = {
+    "version": "Forecast 2",
+    "Customer": "PUC102153"  
+}
+
+# Convert to Cellset Dictionary Format
+cellset = {}
+for _, row in formatted_df.iterrows():
+    element_tuple = (
+        constant_values['version'],
+        row['Month'],
+        row['Item'],
+        constant_values['Customer'],
+        row['Location'],        
+        row['Method']
+    )
+    cellset[element_tuple] = str(round(row['Value'], 3))
+
+
+# Convert Cellset Dictionary to DataFrame
+cellset_list = [
+    list(key) + [float(value)]  # Convert tuple to list and ensure 'Value' is float
+    for key, value in cellset.items()
+]
+
+# Create DataFrame with correct column names
+cellset_df = pd.DataFrame(
+    cellset_list,
+    columns=['Version', 'Month', 'Product', 'Customer', 'Country', 'Measure', 'Value']
+)
+
+# Define CSV output path
+csv_output_path = "E:/IBM Demos/SandOpN/forecast_output3.csv"
+
+# Save as CSV
+cellset_df.to_csv(csv_output_path, index=False, encoding='utf-8')
+
+logging.info(f"Cellset exported successfully to {csv_output_path}")
+
+
+ 
+
+from TM1py.Services import TM1Service
+from TM1py.Utils import Utils
+
+ 
+
+address = "ibmdemos"
+port = "50439"
+user = "admin"
+password = "apple"
+ssl = False
+
+with TM1Service(address=address, port=port, user=user, password=password, ssl=ssl) as tm1:
+    # TM1 Connected Server
+    server_name = tm1.server.get_server_name()
+    tm1_version = tm1.server.get_product_version()
+    print(f"TM1 version {tm1_version}")
+    print(f"Connected to TM1 server: {server_name}")
+
+
+    tm1.cubes.cells.write_values(cube_name='Forecast', cellset_as_dict=cellset)
+    #print(cellset)
+    #print(f"Successfully wrote data from {output_file} to cube {cube_name}.")
+# Close Connection
+    tm1.logout()
+
+ 
+
+
+

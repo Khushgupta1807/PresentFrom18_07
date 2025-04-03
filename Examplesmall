@@ -1,86 +1,56 @@
-import re
 import pandas as pd
 from TM1py.Services import TM1Service
 
-def extract_element(coordinate):
-    """
-    Extract the element name from a coordinate string.
-    For example, given "[Item]. [Item]. [Item 1]", it returns "Item 1".
-    This function uses a regex to find all text within square brackets
-    and returns the last match.
-    """
-    # Use regex to find all content between '[' and ']'
-    matches = re.findall(r'\[([^\]]+)\]', coordinate)
-    if matches:
-        return matches[-1].strip()
-    # Fallback: split on spaces and return the last token
-    tokens = coordinate.split()
-    if tokens:
-        return tokens[-1].strip()
-    return coordinate.strip()
+# Define the dimension names in the order that they appear in your cube keys.
+# You can easily change these names as needed.
+dimensions = ["Item", "Location", "Customer", "Month", "Year", "Sales"]
 
-# TM1 Connection Parameters (replace these with your actual details)
-tm1_address = "your_tm1_server_address"  # e.g., "tm1.mycompany.com" or an IP address
+# TM1 Connection Parameters (update these with your actual TM1 server details)
+tm1_address = "your_tm1_server_address"  # e.g., "tm1.mycompany.com"
 tm1_port = "50439"
 tm1_user = "admin"
 tm1_password = "apple"
 tm1_ssl = False
 
-# Specify the cube and view names
 cube_name = "InputCube"
 view_name = "Default"
 
 with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
                 password=tm1_password, ssl=tm1_ssl) as tm1:
-    # Retrieve the raw data from the view.
-    # The returned dictionary's keys are tuples of coordinate strings.
+    
+    # Retrieve the raw data from the specified cube view.
     raw_data = tm1.cubes.cells.execute_view(cube_name=cube_name, view_name=view_name, private=False)
+    print("Raw data from view:")
+    print(raw_data)
     
-    # Build a list to hold each row (one row per cell)
+    # Process the raw_data into rows for a DataFrame.
     rows = []
-    
     for key, cell in raw_data.items():
-        # Expecting key to have 6 coordinates corresponding to:
-        # [Item], [Location], [Customer], [Month], [Year], [Sales]
-        if len(key) < 6:
-            print("Warning: key has unexpected format:", key)
+        # Check that the key has at least as many elements as defined in the dimensions list.
+        if len(key) < len(dimensions):
+            print("Warning: key has fewer coordinates than expected:", key)
             continue
         
-        item     = extract_element(key[0])
-        location = extract_element(key[1])
-        customer = extract_element(key[2])
-        month    = extract_element(key[3])
-        year     = extract_element(key[4])
-        # For Sales, try to extract the numeric value from the coordinate;
-        # if the cell's value is provided, that takes precedence.
-        sales_coord = extract_element(key[5])
+        # Build a row dictionary using the dimensions list.
+        row = {}
+        for idx, dim_name in enumerate(dimensions):
+            # Simple processing: split the coordinate by whitespace and take the last token.
+            element_value = key[idx].split()[-1].strip()
+            row[dim_name] = element_value
         
-        value = cell.get('Value')
-        if value is None:
+        # For the Sales dimension, use the cell's Value if present.
+        sales_val = cell.get("Value")
+        if sales_val is None:
             try:
-                # If conversion fails, keep the string
-                value = float(sales_coord)
+                sales_val = float(row["Sales"])
             except Exception:
-                value = sales_coord
+                sales_val = row["Sales"]
+        row["Sales"] = sales_val
         
-        # Create a dictionary for this row
-        row = {
-            "Item": item,
-            "Location": location,
-            "Customer": customer,
-            "Month": month,
-            "Year": year,
-            "Sales": value
-        }
         rows.append(row)
     
-    # Create a DataFrame from the collected rows
+    # Create a pandas DataFrame from the rows.
     df = pd.DataFrame(rows)
-    
-    # Print out the DataFrame shape and preview for verification
     print("DataFrame shape:", df.shape)
-    print("Unique Item values:", df["Item"].unique())
-    print("Unique Location values:", df["Location"].unique())
-    print("Unique Customer values:", df["Customer"].unique())
     print("DataFrame preview:")
     print(df.head())

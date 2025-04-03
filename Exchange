@@ -9,20 +9,23 @@ from openpyxl.drawing.image import Image
 # TM1py imports for TM1 connectivity
 from TM1py.Services import TM1Service
 
-
-
 # TM1 Connection Parameters (adjust these to match your TM1 server settings)
 tm1_address = "ibmdemos"  # server address (replace with your actual TM1 server hostname or IP)
 tm1_port = "52177"
 tm1_user = "admin"
 tm1_password = "apple"
 tm1_ssl = False
-dimensions = ["Item", "Location", "Cus", "Month", "Year", "Sales"]
+
+# Dimensions in your cube.
+# Assuming "Sales" is the measure and not a typical dimension element.
+dimensions = ["Cus", "Item", "Month", "Location", "Year"]
 
 # Define the cube and view you want to test
 input_cube = "KG_Test"      # Replace with your cube name
 view_name = "KGView"        # Replace with your view name (use "Default" if that's your default view)
 output_cube = "Output_cube"
+
+# Connect to TM1 and retrieve raw data from the input cube view
 with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
                 password=tm1_password, ssl=tm1_ssl) as tm1:
     
@@ -32,27 +35,27 @@ with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
     print(raw_data)
     
     # Process the raw_data into rows for a DataFrame.
+    # Here we assume that the cell key contains values corresponding to the dimensions
     rows = []
+    # You may need to adjust the following list if your raw data is structured differently.
     for key, cell in raw_data.items():
-        # Check that the key has at least as many elements as defined in the dimensions list.
-        if len(key) < len(dimensions):
+        if len(key) < len(dimensions) + 1:  # +1 if Sales is included in the key or separate?
             print("Warning: key has fewer coordinates than expected:", key)
             continue
-        
-        # Build a row dictionary using the dimensions list.
         row = {}
+        # Map each coordinate to the corresponding dimension (skipping "Sales" if it is a cell value)
         for idx, dim_name in enumerate(dimensions):
-            # Simple processing: split the coordinate by whitespace and take the last token.
+            # Example processing: extract element value from the coordinate
             element_value = key[idx].split()[-1].strip()
             row[dim_name] = element_value
         
-        # For the Sales dimension, use the cell's Value if present.
+        # For Sales, get the cell's Value
         sales_val = cell.get("Value")
         if sales_val is None:
             try:
-                sales_val = float(row["Sales"])
+                sales_val = float(key[-1])
             except Exception:
-                sales_val = row["Sales"]
+                sales_val = key[-1]
         row["Sales"] = sales_val
         
         rows.append(row)
@@ -62,7 +65,7 @@ with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
     print("DataFrame shape:", df.shape)
     print("DataFrame preview:")
     print(df.head())
-    
+
 # --------------------- Transform the Data ---------------------
 # Example transformation: Increase the Sales value by 10% if it is numeric.
 def transform_sales(value):
@@ -75,28 +78,59 @@ df["Sales"] = df["Sales"].apply(transform_sales)
 print("DataFrame after transformation:")
 print(df.head())
 
+# --------------------- Add Missing Elements to Dimensions ---------------------
+# Before writing data to the cube, ensure that every element in the DataFrame exists in TM1.
+# This example iterates over each dimension (except "Sales") and adds missing elements.
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
+                password=tm1_password, ssl=tm1_ssl) as tm1:
+    
+    # Loop over each dimension we expect (for measures, you typically do not add elements)
+    for dim in dimensions:
+        # Retrieve the current hierarchy for the dimension. Change 'Default' if your hierarchy has a different name.
+        hierarchy = tm1.dimensions.hierarchies.get(dimension_name=dim, hierarchy_name="Default")
+        
+        # Get the list of current element names in the hierarchy
+        current_elements = [el.Name for el in hierarchy.Elements]
+        
+        # For each unique element in the DataFrame column for this dimension, check if it exists and add if missing.
+        for element in df[dim].unique():
+            if element not in current_elements:
+                print(f"Element '{element}' not found in dimension '{dim}'. Adding element...")
+                # Determine element type: Typically "Numeric" for numbers and "String" for others.
+                # Here we assume string elements; adjust if needed.
+                element_type = "String"
+                try:
+                    tm1.dimensions.hierarchies.add_element(
+                        dimension_name=dim,
+                        hierarchy_name="Default",
+                        element_name=element,
+                        element_type=element_type
+                    )
+                    print(f"Added element '{element}' to dimension '{dim}'.")
+                except Exception as e:
+                    print(f"Error adding element '{element}' to dimension '{dim}':", e)
+            else:
+                print(f"Element '{element}' already exists in dimension '{dim}'.")
+
 # --------------------- Write Data to Output Cube ---------------------
 # Build a cellset dictionary from the DataFrame.
-#cellset = {}
-cellset={("Cus 2", "Item 2", "Month 2", "Location1", "Year2", "1000"):97}
+# The key tuple should follow the order of dimensions as defined in the cube.
+cellset = {}
+
+# For each row in the DataFrame, build a key tuple.
 for idx, row in df.iterrows():
-    # Create a key tuple using the dimension values in the order specified.
-    key = tuple(str(row[dim]) for dim in dimensions)
-    
-    # Convert the Sales value to float if possible.
+    key = tuple(str(row[dim]) for dim in dimensions) + (str(row["Sales"]),)  # Adjust if your cube structure is different
     try:
         value = float(row["Sales"])
     except Exception:
         value = row["Sales"]
-    
     cellset[key] = value
 
-# Write the cellset to the output cube.
 with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
                 password=tm1_password, ssl=tm1_ssl) as tm1:
     try:
-        #tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset)
-        tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset, dimension= ["Cus ", "Item ", "Month ", "Location", "Year", "Sales"])
+        # Write the cellset to the output cube.
+        tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset)
         print(f"Data successfully written to cube: {output_cube}")
     except Exception as e:
         print("Error writing to output cube:", e)

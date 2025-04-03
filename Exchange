@@ -1,0 +1,102 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import STL
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.drawing.image import Image
+
+# TM1py imports for TM1 connectivity
+from TM1py.Services import TM1Service
+
+
+
+# TM1 Connection Parameters (adjust these to match your TM1 server settings)
+tm1_address = "ibmdemos"  # server address (replace with your actual TM1 server hostname or IP)
+tm1_port = "52177"
+tm1_user = "admin"
+tm1_password = "apple"
+tm1_ssl = False
+dimensions = ["Item", "Location", "Cus", "Month", "Year", "Sales"]
+
+# Define the cube and view you want to test
+input_cube = "KG_Test"      # Replace with your cube name
+view_name = "KGView"        # Replace with your view name (use "Default" if that's your default view)
+output_cube = "Output_cube"
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
+                password=tm1_password, ssl=tm1_ssl) as tm1:
+    
+    # Retrieve the raw data from the specified cube view.
+    raw_data = tm1.cubes.cells.execute_view(cube_name=input_cube, view_name=view_name, private=False)
+    print("Raw data from view:")
+    print(raw_data)
+    
+    # Process the raw_data into rows for a DataFrame.
+    rows = []
+    for key, cell in raw_data.items():
+        # Check that the key has at least as many elements as defined in the dimensions list.
+        if len(key) < len(dimensions):
+            print("Warning: key has fewer coordinates than expected:", key)
+            continue
+        
+        # Build a row dictionary using the dimensions list.
+        row = {}
+        for idx, dim_name in enumerate(dimensions):
+            # Simple processing: split the coordinate by whitespace and take the last token.
+            element_value = key[idx].split()[-1].strip()
+            row[dim_name] = element_value
+        
+        # For the Sales dimension, use the cell's Value if present.
+        sales_val = cell.get("Value")
+        if sales_val is None:
+            try:
+                sales_val = float(row["Sales"])
+            except Exception:
+                sales_val = row["Sales"]
+        row["Sales"] = sales_val
+        
+        rows.append(row)
+    
+    # Create a pandas DataFrame from the rows.
+    df = pd.DataFrame(rows)
+    print("DataFrame shape:", df.shape)
+    print("DataFrame preview:")
+    print(df.head())
+    
+# --------------------- Transform the Data ---------------------
+# Example transformation: Increase the Sales value by 10% if it is numeric.
+def transform_sales(value):
+    try:
+        return float(value) * 1.10  # Increase by 10%
+    except Exception:
+        return value  # Leave non-numeric values as is
+
+df["Sales"] = df["Sales"].apply(transform_sales)
+print("DataFrame after transformation:")
+print(df.head())
+
+# --------------------- Write Data to Output Cube ---------------------
+# Build a cellset dictionary from the DataFrame.
+#cellset = {}
+cellset={("Cus 2", "Item 2", "Month 2", "Location1", "Year2", "1000"):97}
+for idx, row in df.iterrows():
+    # Create a key tuple using the dimension values in the order specified.
+    key = tuple(str(row[dim]) for dim in dimensions)
+    
+    # Convert the Sales value to float if possible.
+    try:
+        value = float(row["Sales"])
+    except Exception:
+        value = row["Sales"]
+    
+    cellset[key] = value
+
+# Write the cellset to the output cube.
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
+                password=tm1_password, ssl=tm1_ssl) as tm1:
+    try:
+        #tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset)
+        tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset, dimension= ["Cus ", "Item ", "Month ", "Location", "Year", "Sales"])
+        print(f"Data successfully written to cube: {output_cube}")
+    except Exception as e:
+        print("Error writing to output cube:", e)

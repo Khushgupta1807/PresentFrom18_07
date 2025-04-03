@@ -13,7 +13,6 @@ tm1_user = "admin"
 tm1_password = "apple"
 tm1_ssl = False
 
-# Cube and view names for input and output
 input_cube = "InputCube"
 view_name = "Default"
 output_cube = "OutputCube"  # Change this to your output cube name
@@ -59,12 +58,23 @@ with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
     print("DataFrame preview:")
     print(df.head())
     
+# --------------------- Transform the Data ---------------------
+# Example transformation: Increase the Sales value by 10% if it is numeric.
+def transform_sales(value):
+    try:
+        return float(value) * 1.10  # Increase by 10%
+    except Exception:
+        return value  # Leave non-numeric values as is
+
+df["Sales"] = df["Sales"].apply(transform_sales)
+print("DataFrame after transformation:")
+print(df.head())
+
 # --------------------- Write Data to Output Cube ---------------------
 # Build a cellset dictionary from the DataFrame.
 cellset = {}
 for idx, row in df.iterrows():
     # Create a key tuple using the dimension values in the order specified.
-    # This tuple should match the dimension order of your output cube.
     key = tuple(str(row[dim]) for dim in dimensions)
     
     # Convert the Sales value to float if possible.

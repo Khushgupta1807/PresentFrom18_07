@@ -1,8 +1,9 @@
 import pandas as pd
 from TM1py.Services import TM1Service
 
-# Define the dimension names in the order that they appear in your cube keys.
-# You can easily change these names as needed.
+# --------------------- Configuration ---------------------
+# Define the dimension names in the order they appear in your cube keys.
+# You can change these names as needed.
 dimensions = ["Item", "Location", "Customer", "Month", "Year", "Sales"]
 
 # TM1 Connection Parameters (update these with your actual TM1 server details)
@@ -12,14 +13,17 @@ tm1_user = "admin"
 tm1_password = "apple"
 tm1_ssl = False
 
-cube_name = "InputCube"
+# Cube and view names for input and output
+input_cube = "InputCube"
 view_name = "Default"
+output_cube = "OutputCube"  # Change this to your output cube name
 
+# --------------------- Retrieve and Process Data ---------------------
 with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
                 password=tm1_password, ssl=tm1_ssl) as tm1:
     
     # Retrieve the raw data from the specified cube view.
-    raw_data = tm1.cubes.cells.execute_view(cube_name=cube_name, view_name=view_name, private=False)
+    raw_data = tm1.cubes.cells.execute_view(cube_name=input_cube, view_name=view_name, private=False)
     print("Raw data from view:")
     print(raw_data)
     
@@ -54,3 +58,28 @@ with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
     print("DataFrame shape:", df.shape)
     print("DataFrame preview:")
     print(df.head())
+    
+# --------------------- Write Data to Output Cube ---------------------
+# Build a cellset dictionary from the DataFrame.
+cellset = {}
+for idx, row in df.iterrows():
+    # Create a key tuple using the dimension values in the order specified.
+    # This tuple should match the dimension order of your output cube.
+    key = tuple(str(row[dim]) for dim in dimensions)
+    
+    # Convert the Sales value to float if possible.
+    try:
+        value = float(row["Sales"])
+    except Exception:
+        value = row["Sales"]
+    
+    cellset[key] = value
+
+# Write the cellset to the output cube.
+with TM1Service(address=tm1_address, port=tm1_port, user=tm1_user,
+                password=tm1_password, ssl=tm1_ssl) as tm1:
+    try:
+        tm1.cubes.cells.write_values(cube_name=output_cube, cellset_as_dict=cellset)
+        print(f"Data successfully written to cube: {output_cube}")
+    except Exception as e:
+        print("Error writing to output cube:", e)
